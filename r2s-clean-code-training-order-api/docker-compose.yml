@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: clean_code_training_postgres
+    environment:
+      POSTGRES_DB: orderdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Abc123
+    ports:
+      - "5432:5432"
+    volumes:
+      - orderdb_data:/var/lib/postgresql/data
+volumes:
+  orderdb_data:

@@ -1,0 +1,29 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/orderdb
+    username: postgres
+    password: Abc123
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+  cloud:
+    openfeign:
+      client:
+        config:
+          notification-service:
+            connect-timeout: 5000
+            read-timeout: 20000
+
+#notification:
+#  service:
+#    url: http://localhost:8081

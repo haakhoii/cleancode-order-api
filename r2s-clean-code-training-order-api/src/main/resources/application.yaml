@@ -24,6 +24,10 @@ spring:
             connect-timeout: 5000
             read-timeout: 20000
 
+logging:
+  level:
+    vn.r2s.training.api.client: DEBUG
+
 #notification:
 #  service:
 #    url: http://localhost:8081

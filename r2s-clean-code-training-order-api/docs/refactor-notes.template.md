@@ -1,35 +1,48 @@
-# Refactor Notes (Template)
+```
+khong co async
 
-## 1) SOLID
-### ISP
-- Problem:
-- Refactor:
-- Result:
+createOrder()
+↓
+publishEvent
+↓
+listener.handle()
+↓
+call notification (sleep 10s)
+↓
+👉 API trả về (sau 10s)
+```
 
-### DIP
-- Problem:
-- Refactor:
-- Result:
+```
+co async
 
-## 2) Design Patterns
-### Strategy (Discount)
-- Before:
-- After:
-- Extensibility:
+createOrder()
+   ↓
+publishEvent
+   ↓
+Spring sẽ chạy cái này ở thread khác
+   ↓
+👉 API RETURN NGAY ✅
 
-### Observer (OrderCreated)
-- Event:
-- Listener:
+(sau đó mới chạy tiếp)
+   ↓
+listener.handle() (background)
+   ↓
+call notification (sleep 10s)
+```
 
-## 3) DRY
-- Duplication removed:
-- Shared components:
+```
+Thread 1 (API)
+----------------
+createOrder
+publishEvent
+👉 RETURN RESPONSE NGAY ✅
 
-## 4) KISS
-- Methods simplified:
-- Complexity reduced:
 
-## 5) Clean Code
-- Naming improvements:
-- Logging improvements:
-- Tests:
+Thread 2 (Async)
+----------------
+handle()
+Feign call
+⏳ chờ 5s
+💥 timeout
+log error
+```

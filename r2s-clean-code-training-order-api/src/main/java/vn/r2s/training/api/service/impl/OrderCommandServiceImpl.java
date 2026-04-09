@@ -4,10 +4,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import vn.r2s.training.api.client.NotificationClient;
-import vn.r2s.training.api.client.payload.SendNotificationRequest;
 import vn.r2s.training.api.dto.request.CreateOrderRequest;
 import vn.r2s.training.api.dto.response.OrderItemsResponse;
 import vn.r2s.training.api.dto.response.OrderResponse;
@@ -15,8 +14,8 @@ import vn.r2s.training.api.dto.response.PricingResponse;
 import vn.r2s.training.api.entity.CustomerEntity;
 import vn.r2s.training.api.entity.OrderEntity;
 import vn.r2s.training.api.entity.OrderItemEntity;
-import vn.r2s.training.api.enums.NotificationChannel;
 import vn.r2s.training.api.enums.OrderStatus;
+import vn.r2s.training.api.event.OrderCreatedEvent;
 import vn.r2s.training.api.repository.CustomerRepository;
 import vn.r2s.training.api.repository.OrderRepository;
 import vn.r2s.training.api.service.DiscountCalculationService;
@@ -32,7 +31,7 @@ public class OrderCommandServiceImpl implements OrderCommandService {
   private final DiscountCalculationService discountService;
   private final CustomerRepository customerRepository;
   private final OrderRepository orderRepository;
-  private final NotificationClient notificationClient;
+  private final ApplicationEventPublisher eventPublisher;
 
   @Override
   @Transactional
@@ -48,6 +47,31 @@ public class OrderCommandServiceImpl implements OrderCommandService {
     );
 
     int finalTotal = pricing.getTotalCents() - discount;
+    OrderEntity order = createAndSaveOrder(customer, pricing, finalTotal, discount);
+
+    log.info("Order created: id={}, email={}, total={}, discount={}",
+        order.getId(),
+        customer.getEmail(),
+        finalTotal,
+        discount
+    );
+    eventPublisher.publishEvent(
+        OrderCreatedEvent.builder()
+            .orderId(order.getId())
+            .customerEmail(customer.getEmail())
+            .total(finalTotal)
+            .discount(discount)
+            .build()
+    );
+    return mapToResponse(order, pricing);
+  }
+
+  private OrderEntity createAndSaveOrder(
+      CustomerEntity customer,
+      PricingResponse pricing,
+      int finalTotal,
+      int discount
+  ) {
 
     OrderEntity order = OrderEntity.builder()
         .customer(customer)
@@ -56,38 +80,11 @@ public class OrderCommandServiceImpl implements OrderCommandService {
         .discountCents(discount)
         .createdAt(LocalDateTime.now())
         .build();
+
     List<OrderItemEntity> orderItems = buildOrderItems(order, pricing);
     order.setItems(orderItems);
-    orderRepository.save(order);
 
-    log.info("Order created: id={}, email={}, total={}, discount={}",
-        order.getId(),
-        customer.getEmail(),
-        finalTotal,
-        discount
-    );
-    sendEmailVerification(order);
-    return mapToResponse(order, pricing);
-  }
-
-  private void sendEmailVerification(OrderEntity order) {
-    try {
-      String content = "Order successfully";
-      String toEmail = order.getCustomer().getEmail();
-      String channel = NotificationChannel.EMAIL.name();
-      SendNotificationRequest request = SendNotificationRequest.builder()
-          .content(content)
-          .to(toEmail)
-          .channel(channel)
-          .build();
-      notificationClient.sendNotification(request);
-    } catch (Exception e) {
-      log.error("(sendEmail)Send email information for order: [{}] at email: [{}] exception with message: [{}]",
-          order.getId(),
-          order.getCustomer().getEmail(),
-          e.getMessage(),
-          e);
-    }
+    return orderRepository.save(order);
   }
 
   private OrderResponse mapToResponse(OrderEntity order, PricingResponse pricing) {

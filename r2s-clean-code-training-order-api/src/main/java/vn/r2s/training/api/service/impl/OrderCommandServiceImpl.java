@@ -16,6 +16,8 @@ import vn.r2s.training.api.entity.OrderEntity;
 import vn.r2s.training.api.entity.OrderItemEntity;
 import vn.r2s.training.api.enums.OrderStatus;
 import vn.r2s.training.api.event.OrderCreatedEvent;
+import vn.r2s.training.api.exception.BadRequestException;
+import vn.r2s.training.api.exception.NotFoundException;
 import vn.r2s.training.api.repository.CustomerRepository;
 import vn.r2s.training.api.repository.OrderRepository;
 import vn.r2s.training.api.service.DiscountCalculationService;
@@ -45,25 +47,21 @@ public class OrderCommandServiceImpl implements OrderCommandService {
         pricing.getTotalCents(),
         request
     );
+    if (discount < 0) {
+      throw new BadRequestException("Invalid discount");
+    }
+    if (discount > pricing.getTotalCents()) {
+      throw new BadRequestException("Discount exceeds total amount");
+    }
 
     int finalTotal = pricing.getTotalCents() - discount;
     OrderEntity order = createAndSaveOrder(customer, pricing, finalTotal, discount);
-
-    log.info("Order created: id={}, email={}, total={}, discount={}",
-        order.getId(),
-        customer.getEmail(),
-        finalTotal,
-        discount
-    );
+    OrderResponse orderResponse = mapToResponse(order);
     eventPublisher.publishEvent(
-        OrderCreatedEvent.builder()
-            .orderId(order.getId())
-            .customerEmail(customer.getEmail())
-            .total(finalTotal)
-            .discount(discount)
-            .build()
+        new OrderCreatedEvent(orderResponse)
     );
-    return mapToResponse(order, pricing);
+
+    return orderResponse;
   }
 
   private OrderEntity createAndSaveOrder(
@@ -87,9 +85,9 @@ public class OrderCommandServiceImpl implements OrderCommandService {
     return orderRepository.save(order);
   }
 
-  private OrderResponse mapToResponse(OrderEntity order, PricingResponse pricing) {
+  private OrderResponse mapToResponse(OrderEntity order) {
 
-    List<OrderItemsResponse> items = pricing.getItems().stream()
+    List<OrderItemsResponse> items = order.getItems().stream()
         .map(item -> OrderItemsResponse.builder()
             .sku(item.getProduct().getSku())
             .quantity(item.getQuantity())
@@ -110,7 +108,7 @@ public class OrderCommandServiceImpl implements OrderCommandService {
 
   private CustomerEntity getCustomerByEmail(String email) {
     return customerRepository.findByEmail(email)
-        .orElseThrow(() -> new RuntimeException("Customer not found: " + email));
+        .orElseThrow(() -> new NotFoundException("Customer not found: " + email));
   }
 
   private List<OrderItemEntity> buildOrderItems(OrderEntity order, PricingResponse pricing) {

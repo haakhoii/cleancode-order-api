@@ -14,6 +14,6 @@ public class FreeShipDiscountStrategy implements DiscountStrategy {
 
   @Override
   public int calculate(int totalCents, CreateOrderRequest request) {
-    return 75000;
+    return 25000;
   }
 }

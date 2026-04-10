@@ -9,11 +9,11 @@ public class NewCustomerDiscountStrategy implements DiscountStrategy {
 
   @Override
   public boolean isApplicable(CreateOrderRequest request) {
-    return request.getCustomerType() == CustomerType.VIP;
+    return request.getCustomerType() == CustomerType.NEW;
   }
 
   @Override
   public int calculate(int totalCents, CreateOrderRequest request) {
-    return 20000;
+    return 10000;
   }
 }

@@ -15,6 +15,6 @@ public class VipCustomerDiscountStrategy implements DiscountStrategy {
 
   @Override
   public int calculate(int totalCents, CreateOrderRequest request) {
-    return (int) (totalCents * 0.05);
+    return 50_000;
   }
 }

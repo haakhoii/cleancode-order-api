@@ -1,7 +1,7 @@
 package vn.r2s.training.api.config;
 
 import java.util.Map;
-import org.apache.coyote.BadRequestException;
+import vn.r2s.training.api.exception.BadRequestException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;

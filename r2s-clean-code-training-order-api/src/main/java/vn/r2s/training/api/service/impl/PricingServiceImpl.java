@@ -10,6 +10,8 @@ import vn.r2s.training.api.dto.request.OrderItemRequest;
 import vn.r2s.training.api.dto.response.PricingItemResponse;
 import vn.r2s.training.api.dto.response.PricingResponse;
 import vn.r2s.training.api.entity.ProductEntity;
+import vn.r2s.training.api.exception.BadRequestException;
+import vn.r2s.training.api.exception.NotFoundException;
 import vn.r2s.training.api.repository.ProductRepository;
 import vn.r2s.training.api.service.PricingService;
 @Service
@@ -34,18 +36,18 @@ public class PricingServiceImpl implements PricingService {
   // private
   private void validate(List<OrderItemRequest> items) {
     if (items == null || items.isEmpty()) {
-      throw new IllegalArgumentException("Items must not be empty");
+      throw new BadRequestException("Items must not be empty");
     }
 
     for (OrderItemRequest item : items) {
       if (item == null) {
-        throw new IllegalArgumentException("Item must not be null");
+        throw new BadRequestException("Item must not be null");
       }
       if (item.getSku() == null || item.getSku().isBlank()) {
-        throw new IllegalArgumentException("SKU must not be blank");
+        throw new BadRequestException("SKU must not be blank");
       }
       if (item.getQuantity() <= 0) {
-        throw new IllegalArgumentException("Quantity must be greater than 0");
+        throw new BadRequestException("Quantity must be greater than 0");
       }
     }
   }
@@ -64,7 +66,7 @@ public class PricingServiceImpl implements PricingService {
 
     for (String sku : skus) {
       if (!productMap.containsKey(sku)) {
-        throw new RuntimeException("Product not found: " + sku);
+        throw new NotFoundException("Product not found: " + sku);
       }
     }
 
@@ -94,14 +96,12 @@ public class PricingServiceImpl implements PricingService {
     return pricingItems;
   }
 
-  // ================= CALCULATE TOTAL =================
   private int calculateTotal(List<PricingItemResponse> items) {
     return items.stream()
         .mapToInt(PricingItemResponse::getLineTotalCents)
         .sum();
   }
 
-  // ================= BUILD RESPONSE =================
   private PricingResponse toResponse(List<PricingItemResponse> items, int total) {
     return PricingResponse.builder()
         .items(items)

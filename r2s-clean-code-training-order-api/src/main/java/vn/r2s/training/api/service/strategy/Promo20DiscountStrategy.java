@@ -14,6 +14,9 @@ public class Promo20DiscountStrategy implements DiscountStrategy {
 
   @Override
   public int calculate(int totalCents, CreateOrderRequest request) {
+    if (totalCents < 10_000_000) {
+      return 0;
+    }
     return (int) (totalCents * 0.2);
   }
 }

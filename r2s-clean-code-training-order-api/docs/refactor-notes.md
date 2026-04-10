@@ -110,7 +110,7 @@ r2s-clean-code-training-order-api
      "customerEmail": "alice@r2s.vn",
      "status": "NEW",
      "totalCents": 249925000,
-     "discountCents": 75000,
+     "discountCents": 25000,
      "items": [
        {
          "sku": "SKU-IPHONE",

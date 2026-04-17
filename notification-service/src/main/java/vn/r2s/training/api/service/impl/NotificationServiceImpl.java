@@ -5,6 +5,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+import vn.r2s.training.api.dto.SendNotificationRequest;
+import vn.r2s.training.api.kafka.message.NotificationMessage;
+import vn.r2s.training.api.kafka.producer.NotificationProducer;
 import vn.r2s.training.api.model.NotificationChannel;
 import vn.r2s.training.api.request.SendNotificationRequestDto;
 import vn.r2s.training.api.service.NotificationService;
@@ -14,16 +17,21 @@ import vn.r2s.training.api.service.NotificationService;
 @RequiredArgsConstructor
 public class NotificationServiceImpl implements NotificationService {
 
-  private final JavaMailSender mailSender;
+  private final NotificationProducer notificationProducer;
+
 
   @Override
-  public void sendNotification(SendNotificationRequestDto requestDto) {
-    SimpleMailMessage message = new SimpleMailMessage();
-    message.setTo(requestDto.getTo());
-    message.setSubject("Order Notification");
-    message.setText(requestDto.getContent());
+  public void sendOrderNotification(SendNotificationRequest request) {
+    NotificationMessage message = NotificationMessage.builder()
+        .orderId(request.getOrderId())
+        .customerEmail(request.getCustomerEmail())
+        .subject(request.getSubject())
+        .content(request.getContent())
+        .verificationCode(request.getVerificationCode())
+        .build();
 
-    mailSender.send(message);
-    log.info("Send email success");
+    notificationProducer.send(message);
+    log.info("[NotificationService] Queued order notification for orderId=[{}] email=[{}]",
+        request.getOrderId(), request.getCustomerEmail());
   }
 }

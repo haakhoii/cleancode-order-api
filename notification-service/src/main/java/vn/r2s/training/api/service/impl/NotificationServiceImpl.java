@@ -2,14 +2,10 @@ package vn.r2s.training.api.service.impl;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 import vn.r2s.training.api.dto.SendNotificationRequest;
 import vn.r2s.training.api.kafka.message.NotificationMessage;
 import vn.r2s.training.api.kafka.producer.NotificationProducer;
-import vn.r2s.training.api.model.NotificationChannel;
-import vn.r2s.training.api.request.SendNotificationRequestDto;
 import vn.r2s.training.api.service.NotificationService;
 
 @Slf4j

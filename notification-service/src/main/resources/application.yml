@@ -2,6 +2,9 @@ server:
   port: 8081
 
 spring:
+  data:
+    mongodb:
+      uri: mongodb://root:password@localhost:27017/notification_service?authSource=admin
   kafka:
     bootstrap-servers: localhost:9092
     consumer:

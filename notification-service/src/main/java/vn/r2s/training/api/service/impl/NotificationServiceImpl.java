@@ -15,7 +15,6 @@ public class NotificationServiceImpl implements NotificationService {
 
   private final NotificationProducer notificationProducer;
 
-
   @Override
   public void sendOrderNotification(SendNotificationRequest request) {
     NotificationMessage message = NotificationMessage.builder()

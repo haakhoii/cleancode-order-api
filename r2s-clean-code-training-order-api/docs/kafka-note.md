@@ -159,4 +159,6 @@ notificationProducer.send(message);
 → Gửi mail qua SMTP (Gmail)
 
 ---
+### Bước 8: Check kafka-ui
 
+![img.png](img.png)

@@ -24,6 +24,12 @@ spring:
             connect-timeout: 5000
             read-timeout: 20000
 
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
 logging:
   level:
     vn.r2s.training.api.client: DEBUG

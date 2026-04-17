@@ -15,9 +15,10 @@ import vn.r2s.training.api.entity.CustomerEntity;
 import vn.r2s.training.api.entity.OrderEntity;
 import vn.r2s.training.api.entity.OrderItemEntity;
 import vn.r2s.training.api.enums.OrderStatus;
-import vn.r2s.training.api.event.OrderCreatedEvent;
 import vn.r2s.training.api.exception.BadRequestException;
 import vn.r2s.training.api.exception.NotFoundException;
+import vn.r2s.training.api.kafka.OrderEventProducer;
+import vn.r2s.training.api.kafka.event.OrderCreatedEvent;
 import vn.r2s.training.api.repository.CustomerRepository;
 import vn.r2s.training.api.repository.OrderRepository;
 import vn.r2s.training.api.service.DiscountCalculationService;
@@ -33,7 +34,7 @@ public class OrderCommandServiceImpl implements OrderCommandService {
   private final DiscountCalculationService discountService;
   private final CustomerRepository customerRepository;
   private final OrderRepository orderRepository;
-  private final ApplicationEventPublisher eventPublisher;
+  private final OrderEventProducer orderEventProducer;
 
   @Override
   @Transactional
@@ -57,11 +58,37 @@ public class OrderCommandServiceImpl implements OrderCommandService {
     int finalTotal = pricing.getTotalCents() - discount;
     OrderEntity order = createAndSaveOrder(customer, pricing, finalTotal, discount);
     OrderResponse orderResponse = mapToResponse(order);
-    eventPublisher.publishEvent(
-        new OrderCreatedEvent(orderResponse)
-    );
+    String content = buildEmailContent(orderResponse);
+
+    OrderCreatedEvent event = OrderCreatedEvent.builder()
+        .to(orderResponse.getCustomerEmail())
+        .subject("Order Created Successfully")
+        .content(content)
+        .build();
+
+    orderEventProducer.send(event);
 
     return orderResponse;
+  }
+
+  private String buildEmailContent(OrderResponse order) {
+
+    String itemsText = order.getItems().stream()
+        .map(i -> String.format("- %s x%d", i.getSku(), i.getQuantity()))
+        .toList()
+        .toString();
+
+    return String.format(
+        "Hi,\n\n" +
+            "Your order has been created.\n\n" +
+            "Order ID: %d\n" +
+            "Items: %s\n" +
+            "Total: %d\n\n" +
+            "Thank you!",
+        order.getId(),
+        itemsText,
+        order.getTotalCents()
+    );
   }
 
   private OrderEntity createAndSaveOrder(

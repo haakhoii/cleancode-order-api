@@ -18,21 +18,12 @@ public class NotificationServiceImpl implements NotificationService {
 
   @Override
   public void sendNotification(SendNotificationRequestDto requestDto) {
-    log.info("(sendNotification) Start send notification: {}", requestDto);
-
-    if (NotificationChannel.EMAIL.equals(requestDto.getChannel())) {
-      sendEmail(requestDto);
-    }
-
-    log.info("(sendNotification) Done send notification: {}", requestDto);
-  }
-
-  private void sendEmail(SendNotificationRequestDto request) {
     SimpleMailMessage message = new SimpleMailMessage();
-    message.setTo(request.getTo());
-    message.setSubject("Notification from system");
-    message.setText(request.getContent());
+    message.setTo(requestDto.getTo());
+    message.setSubject("Order Notification");
+    message.setText(requestDto.getContent());
 
     mailSender.send(message);
+    log.info("Send email success");
   }
 }

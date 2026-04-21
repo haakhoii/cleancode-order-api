@@ -24,11 +24,11 @@ public class OrderController {
   }
 
   @PostMapping("/{id}/verify")
-  public ApiResponse<OrderResponse> verifyOrder(
+  public ApiResponse<String> verifyOrder(
       @PathVariable("id") Long id,
       @RequestParam("code") String code
   ) {
-    return ApiResponse.<OrderResponse>builder()
+    return ApiResponse.<String>builder()
         .result(commandService.verifyOrder(id, code))
         .build();
   }

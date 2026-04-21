@@ -16,6 +16,7 @@ import vn.r2s.training.api.dto.response.PricingResponse;
 import vn.r2s.training.api.entity.CustomerEntity;
 import vn.r2s.training.api.entity.OrderEntity;
 import vn.r2s.training.api.entity.OrderItemEntity;
+import vn.r2s.training.api.enums.NotificationChannel;
 import vn.r2s.training.api.enums.OrderStatus;
 import vn.r2s.training.api.exception.BadRequestException;
 import vn.r2s.training.api.exception.NotFoundException;
@@ -51,21 +52,16 @@ public class OrderCommandServiceImpl implements OrderCommandService {
     }
     int finalTotal = pricing.getTotalCents() - discount;
     String verificationCode = createVerifyCode();
-    OrderEntity order = createAndSaveOrder(customer, pricing, finalTotal, discount,
-        verificationCode);
+    OrderEntity order = createAndSaveOrder(customer, pricing, finalTotal, discount);
     OrderResponse orderResponse = mapToResponse(order);
     sendOrderNotification(order, verificationCode);
 
     return orderResponse;
   }
 
-  private static String createVerifyCode() {
-    return UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
-  }
-
   @Override
   @Transactional
-  public OrderResponse verifyOrder(Long orderId, String code) {
+  public String verifyOrder(Long orderId, String code) {
     OrderEntity order = orderRepository.findById(orderId)
         .orElseThrow(() -> new NotFoundException("Order not found: " + orderId));
 
@@ -76,51 +72,28 @@ public class OrderCommandServiceImpl implements OrderCommandService {
       throw new BadRequestException("Order is cancelled");
     }
     order.setStatus(OrderStatus.SUCCESS);
-    OrderEntity saved = orderRepository.save(order);
+    orderRepository.save(order);
     log.info("[verifyOrder] Order [{}] verified successfully → status=SUCCESS", orderId);
 
-    return mapToResponse(saved);
+    return "Order verified successfully with orderId: " + orderId;
+  }
+
+  // private
+  private static String createVerifyCode() {
+    return UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
   }
 
   private void sendOrderNotification(OrderEntity order, String verificationCode) {
     try {
-      String itemsText = order.getItems().stream()
-          .map(i -> String.format("- %s x%d (%,d)",
-              i.getProduct().getSku(),
-              i.getQuantity(),
-              i.getUnitPriceCents()
-          ))
-          .reduce("", (a, b) -> a + "\n" + b);
-
-      String content = String.format(
-          "Your order has been created successfully.\n\n" +
-              "Order ID: %d\n" +
-              "Status: %s\n" +
-              "Created At: %s\n\n" +
-              "Items:\n%s\n\n" +
-              "Total: %,d\n" +
-              "Discount: %,d\n" +
-              "Final Amount: %,d\n\n" +
-              "Verification Code: %s\n\n" +
-              "Use this code to confirm your order.\n\n" +
-
-              "Thank you!",
-          order.getId(),
-          order.getStatus(),
-          order.getCreatedAt(),
-          itemsText,
-          order.getTotalCents(),
-          order.getDiscountCents(),
-          order.getTotalCents() - order.getDiscountCents(),
-          verificationCode
-      );
+      String content = createContent(order, verificationCode);
 
       SendOrderNotificationRequest notificationRequest = SendOrderNotificationRequest.builder()
           .orderId(String.valueOf(order.getId()))
-          .customerEmail(order.getCustomer().getEmail())
+          .to(order.getCustomer().getEmail())
           .subject("Order Verification Code")
           .content(content)
           .verificationCode(verificationCode)
+          .channel(NotificationChannel.EMAIL)
           .build();
 
       notificationClient.sendNotification(notificationRequest);
@@ -132,9 +105,41 @@ public class OrderCommandServiceImpl implements OrderCommandService {
     }
   }
 
+  private static String createContent(OrderEntity order, String verificationCode) {
+    String itemsText = order.getItems().stream()
+        .map(i -> String.format("- %s x%d (%,d)",
+            i.getProduct().getSku(),
+            i.getQuantity(),
+            i.getUnitPriceCents()
+        ))
+        .reduce("", (a, b) -> a + "\n" + b);
+
+      return String.format(
+        "Your order has been created successfully.\n\n" +
+            "Order ID: %d\n" +
+            "Status: %s\n" +
+            "Created At: %s\n\n" +
+            "Items:\n%s\n\n" +
+            "Total: %,d\n" +
+            "Discount: %,d\n" +
+            "Final Amount: %,d\n\n" +
+            "Verification Code: %s\n\n" +
+            "Use this code to confirm your order.\n\n" +
+
+            "Thank you!",
+        order.getId(),
+        order.getStatus(),
+        order.getCreatedAt(),
+        itemsText,
+        order.getTotalCents(),
+        order.getDiscountCents(),
+        order.getTotalCents() - order.getDiscountCents(),
+        verificationCode
+    );
+  }
+
   private OrderEntity createAndSaveOrder(
-      CustomerEntity customer, PricingResponse pricing, int finalTotal, int discount,
-      String verificationCode
+      CustomerEntity customer, PricingResponse pricing, int finalTotal, int discount
   ) {
     OrderEntity order = OrderEntity.builder()
         .customer(customer)

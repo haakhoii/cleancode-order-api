@@ -18,13 +18,11 @@ public class NotificationHistory {
   private String id;
 
   private String orderId;
-  private String customerEmail;
+  private String to;
   private String subject;
   private String content;
   private String verificationCode;
 
   private NotificationStatus  status;
-  private String errorMessage;
-
   private Instant createdAt;
 }

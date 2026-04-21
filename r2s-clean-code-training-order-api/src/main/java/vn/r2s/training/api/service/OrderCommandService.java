@@ -5,5 +5,5 @@ import vn.r2s.training.api.dto.response.OrderResponse;
 
 public interface OrderCommandService {
   OrderResponse createOrder(CreateOrderRequest request);
-  OrderResponse verifyOrder(Long orderId, String code);
+  String verifyOrder(Long orderId, String code);
 }

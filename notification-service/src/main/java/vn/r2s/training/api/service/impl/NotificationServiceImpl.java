@@ -37,6 +37,15 @@ public class NotificationServiceImpl implements NotificationService {
         .build();
     historyRepository.save(history);
 
+    publishNotificationEvent(request, notificationId);
+
+    log.info("[NotificationService] Queued orderId=[{}] notificationId=[{}] email=[{}]",
+        request.getOrderId(), notificationId, request.getTo());
+
+    return history;
+  }
+
+  private void publishNotificationEvent(SendNotificationRequest request, String notificationId) {
     NotificationMessage message = NotificationMessage.builder()
         .notificationId(notificationId)
         .orderId(request.getOrderId())
@@ -47,10 +56,5 @@ public class NotificationServiceImpl implements NotificationService {
         .channel(request.getChannel())
         .build();
     notificationProducer.send(message);
-
-    log.info("[NotificationService] Queued orderId=[{}] notificationId=[{}] email=[{}]",
-        request.getOrderId(), notificationId, request.getTo());
-
-    return history;
   }
 }

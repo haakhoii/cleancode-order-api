@@ -10,10 +10,8 @@ Hệ thống gồm hai service giao tiếp với nhau:
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         ORDER SERVICE                               │
 │                                                                     │
-│  POST /api/orders                                                   │
-│    → validate request                                               │
-│    → tính giá, discount                                             │
-│    → lưu OrderEntity vào PostgreSQL  (status = PENDING)             │
+│  POST /api/orders (create order)                                    │
+│    → Tạo order và lưu vào db với status PENDING                     │
 │    → gọi Notification Service qua OpenFeign                         │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │  HTTP POST /api/notifications/send
@@ -44,19 +42,20 @@ Hệ thống gồm hai service giao tiếp với nhau:
 
 ```java
 // OrderCommandServiceImpl.java
+@Override
+@Transactional
 public OrderResponse createOrder(CreateOrderRequest request) {
-    CustomerEntity customer = getCustomerByEmail(request.getCustomerEmail());
-    PricingResponse pricing = pricingService.calculate(request.getItems());
-    int discount = discountService.calculate(pricing.getTotalCents(), request);
-    String verificationCode = createVerifyCode();
+  CustomerEntity customer = getCustomerByEmail(request.getCustomerEmail());
+  PricingResponse pricing = pricingService.calculate(request.getItems());
+  int discount = discountService.calculate(pricing.getTotalCents(), request);
+  validateDiscount(discount, pricing.getTotalCents());
+  int finalTotal = pricing.getTotalCents() - discount;
+  String verificationCode = generateVerificationCode();
+  OrderEntity order = createAndSaveOrder(customer, pricing, finalTotal, discount);
+  
+  sendOrderNotification(order, verificationCode);
 
-    OrderEntity order = createAndSaveOrder(customer, pricing, finalTotal, discount);
-    // → lưu vào PostgreSQL, status = PENDING
-
-    sendOrderNotification(order, verificationCode);
-    // → gọi OpenFeign sang Notification Service
-
-    return mapToResponse(order);
+  return orderMapper.toResponse(order);
 }
 ```
 
@@ -81,37 +80,30 @@ OpenFeign tự động serialize request thành HTTP POST và gửi sang Notific
 
 ---
 
-### Bước 3 — Notification Service nhận request, lưu DB, publish Kafka
+### Bước 3 — Notification Service (Kafka) nhận request, lưu DB, publish Kafka
 
 ```java
-// NotificationServiceImpl.java (Notification Service)
+@Override
 public NotificationHistory sendOrderNotification(SendNotificationRequest request) {
+  NotificationHistory history = NotificationHistory.builder()
+      .id(UUID.randomUUID().toString())
+      .orderId(request.getOrderId())
+      .to(request.getTo())
+      .subject(request.getSubject())
+      .content(request.getContent())
+      .verificationCode(request.getVerificationCode())
+      .status(NotificationStatus.PENDING)
+      .createdAt(Instant.now())
+      .build();
+  historyRepository.save(history);
 
-    // 1. Tạo ID duy nhất cho notification này
-    String notificationId = UUID.randomUUID().toString();
+  // producer
+  publishNotificationEvent(request, notificationId);
 
-    // 2. Lưu vào MongoDB với status = PENDING — TRƯỚC KHI publish Kafka
-    // Dù Kafka có crash ngay sau đây, record này vẫn còn
-    NotificationHistory history = NotificationHistory.builder()
-        .id(notificationId)
-        .orderId(request.getOrderId())
-        .customerEmail(request.getCustomerEmail())
-        .status(NotificationStatus.PENDING)
-        .createdAt(Instant.now())
-        .build();
-    historyRepository.save(history);
+  log.info("[NotificationService] Queued orderId=[{}] notificationId=[{}] email=[{}]",
+      request.getOrderId(), notificationId, request.getTo());
 
-    // 3. Publish lên Kafka (kèm notificationId để consumer biết record nào cần update)
-    NotificationMessage message = NotificationMessage.builder()
-        .notificationId(notificationId)
-        .orderId(request.getOrderId())
-        .customerEmail(request.getCustomerEmail())
-        .channel(request.getChannel())
-        .build();
-    notificationProducer.send(message);
-
-    // 4. Return ngay — KHÔNG đợi email/SMS gửi xong
-    return history;
+  return history;
 }
 ```
 
@@ -138,7 +130,7 @@ public void consume(NotificationMessage message) {
             .findFirst()
             .orElseThrow();
 
-        sender.send(message)
+        sender.send(message);
 
         history.setStatus(NotificationStatus.SUCCESS);
     } catch (Exception e) {
@@ -294,7 +286,6 @@ OpenFeign nhận request
 | Email fail → đặt hàng fail? | Có | Không | Không |
 | Retry tự động khi gửi fail? | Không | Có | Có |
 | Message mất khi Kafka crash? | Không áp dụng | Có thể | Không (PENDING trong DB) |
-| Coupling ở tầng infrastructure? | Thấp | Cao | Thấp |
 
 ---
 
@@ -306,11 +297,13 @@ Dữ liệu trong MongoDB được lưu dưới dạng JSON, trông như thế n
 
 ```json
 {
-  "_id": "uuid-123",
-  "channel": "EMAIL",
-  "customerEmail": "john@example.com",
-  "subject": "Xác nhận đơn hàng",
-  "status": "SUCCESS"
+  "notificationId": "0d91397a-e64c-40b5-803f-0af0c6876192",
+  "orderId": "68",
+  "to": "aakhoii207@gmail.com",
+  "subject": "Order Verification Code",
+  "content": "Your order has been created successfully.\n\nOrder ID: 68\nStatus: PENDING\nCreated At: 2026-04-21T11:22:31.098910400\n\nItems:\n\n- SKU-MAC x3 (32,000,000)\n\nTotal: 95,925,000\nDiscount: 75,000\nFinal Amount: 95,850,000\n\nVerification Code: 816DC088\n\nUse this code to confirm your order.\n\nThank you!",
+  "verificationCode": "816DC088",
+  "channel": "EMAIL"
 }
 ```
 
@@ -324,7 +317,7 @@ public class NotificationHistory {
     @Id
     private String id;
     private String orderId;
-    private String customerEmail;
+    private String to;
     private String subject;
     private String content;
     private String verificationCode;
@@ -359,10 +352,6 @@ CREATE TABLE notification_history (
     phone_number VARCHAR,
     sms_provider VARCHAR,
     country_code VARCHAR,
-    -- push fields
-    device_token VARCHAR,
-    badge_count INT,
-    deeplink VARCHAR,
     ...
 )
 ```
@@ -382,7 +371,6 @@ Vấn đề: Không query được bên trong. Muốn tìm tất cả notificati
 ```sql
 TABLE email_notification_history  (id, subject, template_id, ...)
 TABLE sms_notification_history    (id, phone_number, provider, ...)
-TABLE push_notification_history   (id, device_token, badge_count, ...)
 ```
 
 Vấn đề: Thêm kênh mới phải tạo bảng mới, sửa code nhiều chỗ. Query lịch sử tất cả notification của một order phải dùng UNION ALL nhiều bảng — phức tạp và chậm.
@@ -404,7 +392,7 @@ MongoDB lưu mỗi document theo schema riêng. Thêm kênh mới hoàn toàn kh
   "verificationCode": "ABC12345",
   "status": "SUCCESS",
   "createdAt": "2024-01-01T10:00:00Z"
-}
+},
 
 // SMS notification — thêm sau, không cần migration
 {

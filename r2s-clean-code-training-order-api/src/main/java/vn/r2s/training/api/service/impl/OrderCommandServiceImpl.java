@@ -139,7 +139,7 @@ public class OrderCommandServiceImpl implements OrderCommandService {
         .subject("Order Verification Code")
         .content(buildNotificationContent(order, verificationCode))
         .verificationCode(verificationCode)
-        .channel(NotificationChannel.SMS)
+        .channel(NotificationChannel.EMAIL)
         .build();
   }
 

@@ -273,6 +273,8 @@ OpenFeign nhận request
 
 **Khi có save MongoDB PENDING:** Dù Kafka crash, record PENDING vẫn tồn tại trong DB. Một scheduled job có thể scan toàn bộ PENDING records và re-publish lên Kafka — đảm bảo notification cuối cùng sẽ được gửi.
 
+**Câu hỏi đặt ra: dữ liệu lưu trong mongo db có bị xoá không:** toaàn bộ dữ liệu luưu trong mongo db sẽ không bị xoá, do mongo db được sử dụng như một ** design patter: audit log**  -> nếu như xảy ra lỗi, có thể dựa vào dữ liệu trong db để kiểm tra về các trạng thái, diễn ra vào lúc nào
+
 ---
 
 ### 3.5 Bảng so sánh

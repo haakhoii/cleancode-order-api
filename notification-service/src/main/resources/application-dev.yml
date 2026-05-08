@@ -1,0 +1,14 @@
+logging:
+  level:
+    vn.r2s.training: DEBUG
+    org.springframework.kafka: DEBUG
+
+springdoc:
+  swagger-ui:
+    enabled: true
+  api-docs:
+    enabled: true
+
+app:
+  security:
+    permit-all: true

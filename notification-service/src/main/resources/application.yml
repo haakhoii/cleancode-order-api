@@ -1,31 +1,47 @@
 server:
-  port: 8081
+  port: ${SERVER_PORT:8081}
 
 spring:
   data:
     mongodb:
-      uri: mongodb://root:password@localhost:27017/notification_service?authSource=admin
+      uri: ${MONGODB_URI}
+
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
     consumer:
-      group-id: notification-group
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:notification-group}
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
-        spring.json.trusted.packages: "*"
+        spring.json.trusted.packages: "vn.r2s.training.api.kafka.message"
+        spring.json.value.default.type: "vn.r2s.training.api.kafka.message.NotificationMessage"
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
 
   mail:
-    host: smtp.gmail.com
-    port: 587
-    username: anhkhoihuynh.dev@gmail.com
-    password: xdgv gpea ixsz dpsr
+    host: ${SMTP_HOST:smtp.gmail.com}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME}
+    password: ${SMTP_PASSWORD}
     properties:
       mail:
         smtp:
           auth: true
           starttls:
             enable: true
+
+logging:
+  level:
+    root: INFO
+    vn.r2s.training: INFO
+
+app:
+  kafka:
+    topic:
+      order-notification: ${KAFKA_TOPIC_ORDER_NOTIFICATION:order.notification}
+  security:
+    permit-all: false

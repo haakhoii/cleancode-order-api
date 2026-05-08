@@ -1,0 +1,13 @@
+logging:
+  level:
+    vn.r2s.training: INFO
+
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false
+
+app:
+  security:
+    permit-all: false

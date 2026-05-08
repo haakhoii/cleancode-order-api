@@ -1,6 +1,10 @@
 package vn.r2s.training.api.service.impl;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +19,7 @@ import vn.r2s.training.api.dto.response.PricingResponse;
 import vn.r2s.training.api.entity.CustomerEntity;
 import vn.r2s.training.api.entity.OrderEntity;
 import vn.r2s.training.api.entity.OrderItemEntity;
+import vn.r2s.training.api.entity.OrderVerification;
 import vn.r2s.training.api.enums.NotificationChannel;
 import vn.r2s.training.api.enums.OrderStatus;
 import vn.r2s.training.api.exception.BadRequestException;
@@ -22,6 +27,7 @@ import vn.r2s.training.api.exception.NotFoundException;
 import vn.r2s.training.api.mapper.OrderMapper;
 import vn.r2s.training.api.repository.CustomerRepository;
 import vn.r2s.training.api.repository.OrderRepository;
+import vn.r2s.training.api.repository.OrderVerificationRepository;
 import vn.r2s.training.api.service.DiscountCalculationService;
 import vn.r2s.training.api.service.OrderCommandService;
 import vn.r2s.training.api.service.PricingService;
@@ -31,10 +37,13 @@ import vn.r2s.training.api.service.PricingService;
 @Slf4j
 public class OrderCommandServiceImpl implements OrderCommandService {
 
+  private static final int CODE_EXPIRY_MINUTES = 15;
+
   private final PricingService pricingService;
   private final DiscountCalculationService discountService;
   private final CustomerRepository customerRepository;
   private final OrderRepository orderRepository;
+  private final OrderVerificationRepository verificationRepository;
   private final NotificationClient notificationClient;
   private final OrderMapper orderMapper;
 
@@ -51,58 +60,84 @@ public class OrderCommandServiceImpl implements OrderCommandService {
     String verificationCode = generateVerificationCode();
 
     OrderEntity order = createAndSaveOrder(customer, pricing, finalTotal, discount);
-    sendOrderNotification(order, verificationCode);
+    saveVerification(order, verificationCode);
 
+    log.info("[createOrder] Order created orderId=[{}] customerId=[{}]",
+        order.getId(), customer.getId());
+
+    sendOrderNotification(order, verificationCode);
     return orderMapper.toResponse(order);
   }
 
   @Override
   @Transactional
   public String verifyOrder(Long orderId, String code) {
-    OrderEntity order = orderRepository.findById(orderId)
-        .orElseThrow(() -> new NotFoundException("Order not found: " + orderId));
+    OrderVerification verification = verificationRepository.findByOrderId(orderId)
+        .orElseThrow(() -> new NotFoundException("Verification not found for order: " + orderId));
+    if (verification.isVerified()) {
+      log.info("[verifyOrder] Order [{}] already verified at {}", orderId, verification.getVerifiedAt());
+      return "Order already verified successfully";
+    }
 
-    validateOrderCanBeVerified(order);
-
+    validateVerification(verification, code);
+    verification.setVerified(true);
+    verification.setVerifiedAt(LocalDateTime.now());
+    verificationRepository.save(verification);
+    OrderEntity order = verification.getOrder();
     order.setStatus(OrderStatus.SUCCESS);
     orderRepository.save(order);
-    log.info("[verifyOrder] Order [{}] verified successfully → status=SUCCESS", orderId);
 
+    log.info("[verifyOrder] Order [{}] verified successfully → status=SUCCESS", orderId);
     return "Order verified successfully with orderId: " + orderId;
   }
 
-  // private method
+  // private
   private void validateDiscount(int discount, int totalCents) {
-    if (discount < 0) {
-      throw new BadRequestException("Invalid discount");
-    }
-    if (discount > totalCents) {
-      throw new BadRequestException("Discount exceeds total amount");
-    }
+    if (discount < 0) throw new BadRequestException("Invalid discount");
+    if (discount > totalCents) throw new BadRequestException("Discount exceeds total amount");
   }
 
-  private void validateOrderCanBeVerified(OrderEntity order) {
-    if (order.getStatus() == OrderStatus.SUCCESS) {
-      throw new BadRequestException("Order already verified");
-    }
+  private void validateVerification(OrderVerification verification, String code) {
+    OrderEntity order = verification.getOrder();
+
     if (order.getStatus() == OrderStatus.CANCELLED) {
       throw new BadRequestException("Order is cancelled");
     }
+    if (LocalDateTime.now().isAfter(verification.getExpiresAt())) {
+      throw new BadRequestException("Verification code has expired");
+    }
+
+    String inputHash = sha256(code);
+    if (!MessageDigest.isEqual(
+        inputHash.getBytes(StandardCharsets.UTF_8),
+        verification.getVerificationCodeHash().getBytes(StandardCharsets.UTF_8))) {
+      throw new BadRequestException("Invalid verification code");
+    }
   }
 
-  private static String generateVerificationCode() {
-    return UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+  private void saveVerification(OrderEntity order, String verificationCode) {
+    LocalDateTime now = LocalDateTime.now();
+    OrderVerification verification = OrderVerification.builder()
+        .order(order)
+        .verificationCodeHash(sha256(verificationCode))
+        .expiresAt(now.plusMinutes(CODE_EXPIRY_MINUTES))
+        .verified(false)
+        .createdAt(now)
+        .build();
+    verificationRepository.save(verification);
   }
 
   private OrderEntity createAndSaveOrder(
-      CustomerEntity customer, PricingResponse pricing, int finalTotal, int discount
+      CustomerEntity customer, PricingResponse pricing,
+      int finalTotal, int discount
   ) {
+    LocalDateTime now = LocalDateTime.now();
     OrderEntity order = OrderEntity.builder()
         .customer(customer)
         .status(OrderStatus.PENDING)
         .totalCents(finalTotal)
         .discountCents(discount)
-        .createdAt(LocalDateTime.now())
+        .createdAt(now)
         .build();
 
     List<OrderItemEntity> items = buildOrderItems(order, pricing);
@@ -124,15 +159,17 @@ public class OrderCommandServiceImpl implements OrderCommandService {
 
   private void sendOrderNotification(OrderEntity order, String verificationCode) {
     try {
-      SendOrderNotificationRequest notificationRequest = buildNotificationRequest(order, verificationCode);
-      notificationClient.sendNotification(notificationRequest);
-      log.info("[createOrder] Sent verification code=[{}] for orderId=[{}]", verificationCode, order.getId());
+      notificationClient.sendNotification(buildNotificationRequest(order, verificationCode));
+      log.info("[createOrder] Notification dispatched for orderId=[{}]", order.getId());
     } catch (Exception e) {
-      log.error("[createOrder] Failed to send notification for orderId=[{}]: {}", order.getId(), e.getMessage(), e);
+      log.error("[createOrder] Failed to dispatch notification for orderId=[{}]: {}",
+          order.getId(), e.getMessage());
     }
   }
 
-  private SendOrderNotificationRequest buildNotificationRequest(OrderEntity order, String verificationCode) {
+  private SendOrderNotificationRequest buildNotificationRequest(
+      OrderEntity order, String verificationCode
+  ) {
     return SendOrderNotificationRequest.builder()
         .orderId(String.valueOf(order.getId()))
         .to(order.getCustomer().getEmail())
@@ -146,32 +183,36 @@ public class OrderCommandServiceImpl implements OrderCommandService {
   private String buildNotificationContent(OrderEntity order, String verificationCode) {
     String itemsText = order.getItems().stream()
         .map(i -> String.format("- %s x%d (%,d)",
-            i.getProduct().getSku(),
-            i.getQuantity(),
-            i.getUnitPriceCents()))
+            i.getProduct().getSku(), i.getQuantity(), i.getUnitPriceCents()))
         .reduce("", (a, b) -> a + "\n" + b);
 
     return String.format(
-        "Your order has been created successfully.\n\n" +
-            "Order ID: %d\n" +
-            "Status: %s\n" +
-            "Created At: %s\n\n" +
-            "Items:\n%s\n\n" +
-            "Total: %,d\n" +
-            "Discount: %,d\n" +
-            "Final Amount: %,d\n\n" +
-            "Verification Code: %s\n\n" +
-            "Use this code to confirm your order.\n\n" +
-            "Thank you!",
-        order.getId(),
-        order.getStatus(),
-        order.getCreatedAt(),
+        "Your order has been created successfully.\n\n"
+            + "Order ID: %d\nStatus: %s\nCreated At: %s\n\n"
+            + "Items:\n%s\n\n"
+            + "Total: %,d\nDiscount: %,d\nFinal Amount: %,d\n\n"
+            + "Verification Code: %s\n"
+            + "This code expires in %d minutes.\n\nThank you!",
+        order.getId(), order.getStatus(), order.getCreatedAt(),
         itemsText,
-        order.getTotalCents(),
-        order.getDiscountCents(),
+        order.getTotalCents(), order.getDiscountCents(),
         order.getTotalCents() - order.getDiscountCents(),
-        verificationCode
+        verificationCode, CODE_EXPIRY_MINUTES
     );
+  }
+
+  private static String generateVerificationCode() {
+    return UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+  }
+
+  private static String sha256(String input) {
+    try {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+      return HexFormat.of().formatHex(hash);
+    } catch (NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 not available", e);
+    }
   }
 
   private CustomerEntity getCustomerByEmail(String email) {

@@ -3,9 +3,15 @@ package vn.r2s.training.api.service.strategy;
 import org.springframework.stereotype.Component;
 import vn.r2s.training.api.dto.request.CreateOrderRequest;
 import vn.r2s.training.api.enums.CustomerType;
+import vn.r2s.training.api.enums.DiscountCategory;
 
 @Component
 public class NewCustomerDiscountStrategy implements DiscountStrategy {
+
+  @Override
+  public DiscountCategory category() {
+    return DiscountCategory.CUSTOMER;
+  }
 
   @Override
   public boolean isApplicable(CreateOrderRequest request) {

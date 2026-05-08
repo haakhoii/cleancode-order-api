@@ -19,13 +19,16 @@ public class NotificationConsumer {
   private final List<NotificationSender> senders;
   private final NotificationHistoryRepository historyRepository;
 
-  @KafkaListener(topics = "order.notification", groupId = "notification-group")
+  @KafkaListener(
+      topics = "${app.kafka.topic.order-notification}",
+      groupId = "${spring.kafka.consumer.group-id}"
+  )
   public void consume(NotificationMessage message) {
     String notificationId = message.getNotificationId();
 
     NotificationHistory history = historyRepository.findById(notificationId)
         .orElseGet(() -> {
-          log.warn("[NotificationConsumer] PENDING record not found for notificationId=[{}], creating fallback",
+          log.warn("[NotificationConsumer] No PENDING record for notificationId=[{}], creating fallback",
               notificationId);
           return NotificationHistory.builder()
               .id(notificationId)
@@ -41,14 +44,13 @@ public class NotificationConsumer {
       NotificationSender sender = senders.stream()
           .filter(s -> s.getType() == message.getChannel())
           .findFirst()
-          .orElseThrow(() -> new RuntimeException("No sender found for channel: " + message.getChannel()));
+          .orElseThrow(() -> new IllegalArgumentException(
+              "No sender found for channel: " + message.getChannel()));
 
       sender.send(message);
-
       history.setStatus(NotificationStatus.SUCCESS);
-      log.info("[NotificationConsumer] Sent notificationId=[{}] orderId=[{}] via [{}]",
+      log.info("[NotificationConsumer] Sent notificationId=[{}] orderId=[{}] channel=[{}]",
           notificationId, message.getOrderId(), message.getChannel());
-
     } catch (Exception e) {
       history.setStatus(NotificationStatus.FAILED);
       log.error("[NotificationConsumer] Failed notificationId=[{}] orderId=[{}]: {}",
